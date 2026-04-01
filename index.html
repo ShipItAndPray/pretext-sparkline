@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>pretext-sparkline -- Collision-Free Inline Sparklines</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0D0D1A;
+    color: #E0E0F0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, #4F8EF7, #34D399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle { color: #808098; font-size: 14px; margin-bottom: 20px; }
+
+  .badges { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  }
+  .badge--green { background: rgba(52,211,153,0.15); color: #34D399; border: 1px solid rgba(52,211,153,0.3); }
+  .badge--blue { background: rgba(79,142,247,0.15); color: #4F8EF7; border: 1px solid rgba(79,142,247,0.3); }
+  .badge--purple { background: rgba(139,92,246,0.15); color: #8B5CF6; border: 1px solid rgba(139,92,246,0.3); }
+
+  .section { width: 100%; max-width: 1000px; margin-bottom: 32px; }
+  .section h2 { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #C0C0D0; }
+
+  .card {
+    background: #141420; border-radius: 12px; border: 1px solid #1E1E2E;
+    padding: 20px; margin-bottom: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  .card-title { font-size: 14px; font-weight: 600; color: #808098; margin-bottom: 12px; }
+
+  .sparkline-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .sparkline-label { font-size: 13px; color: #A0A0B8; min-width: 120px; }
+
+  .controls { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; align-items: center; }
+
+  button {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid #333348;
+    background: #1E1E2E; color: #C0C0D0; font-size: 13px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { background: #2A2A3E; border-color: #4F8EF7; color: #FFF; }
+
+  input[type="range"] {
+    -webkit-appearance: none; background: #1E1E2E; border-radius: 4px; height: 6px; width: 200px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #4F8EF7; cursor: pointer;
+  }
+
+  textarea {
+    width: 100%; background: #1E1E2E; border: 1px solid #333348; color: #E0E0F0;
+    border-radius: 8px; padding: 8px 12px; font-family: monospace; font-size: 13px;
+    resize: vertical; min-height: 40px;
+  }
+
+  .ticker-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .ticker-card {
+    background: #1A1A2E; border-radius: 8px; padding: 12px;
+    border: 1px solid #252540;
+  }
+  .ticker-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .ticker-symbol { font-weight: 700; font-size: 15px; }
+  .ticker-price { font-size: 14px; font-weight: 600; }
+  .ticker-price.up { color: #34D399; }
+  .ticker-price.down { color: #EF4444; }
+  .ticker-change { font-size: 11px; }
+
+  .perf-result { font-size: 13px; color: #34D399; font-weight: 600; margin-top: 12px; }
+
+  .table-demo { width: 100%; border-collapse: collapse; }
+  .table-demo th, .table-demo td {
+    padding: 8px 12px; text-align: left; border-bottom: 1px solid #1E1E2E;
+    font-size: 13px;
+  }
+  .table-demo th { color: #808098; font-weight: 600; }
+  .table-demo td { color: #C0C0D0; }
+
+  .info {
+    margin-top: 24px; max-width: 600px; text-align: center;
+    color: #606078; font-size: 13px; line-height: 1.6;
+  }
+  .info a { color: #4F8EF7; text-decoration: none; }
+  .info a:hover { text-decoration: underline; }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 22px; }
+    .ticker-grid { grid-template-columns: 1fr; }
+    body { padding: 16px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>pretext-sparkline</h1>
+<p class="subtitle">Inline sparklines with collision-free value labels</p>
+
+<div class="badges">
+  <span class="badge badge--green">0 label overlaps</span>
+  <span class="badge badge--blue">Canvas rendered</span>
+  <span class="badge badge--purple">Pretext-powered</span>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <label style="color:#808098;font-size:13px">Width:</label>
+  <input type="range" id="width-slider" min="100" max="600" value="300" />
+  <span id="width-val" style="color:#A0A0B8;font-size:13px;min-width:40px">300px</span>
+  <button id="btn-randomize">Randomize Data</button>
+  <button id="btn-reset">Reset</button>
+</div>
+
+<!-- 1. Basic line -->
+<div class="section">
+  <h2>Sparkline Variants</h2>
+
+  <div class="card">
+    <div class="card-title">Basic Line</div>
+    <div class="sparkline-row">
+      <span class="sparkline-label">Revenue trend</span>
+      <canvas id="spark-basic"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">With End Label</div>
+    <div class="sparkline-row">
+      <span class="sparkline-label">Active users</span>
+      <canvas id="spark-end"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">With Min/Max Labels</div>
+    <div class="sparkline-row">
+      <span class="sparkline-label">CPU usage %</span>
+      <canvas id="spark-minmax"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">With Fill</div>
+    <div class="sparkline-row">
+      <span class="sparkline-label">Memory MB</span>
+      <canvas id="spark-fill"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">With Annotations</div>
+    <div class="sparkline-row">
+      <span class="sparkline-label">Deployments</span>
+      <canvas id="spark-annotations"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">In a Table Cell</div>
+    <table class="table-demo">
+      <thead><tr><th>Metric</th><th>Current</th><th>Trend (7d)</th></tr></thead>
+      <tbody>
+        <tr><td>Requests/s</td><td>12.4K</td><td><canvas id="spark-table-1"></canvas></td></tr>
+        <tr><td>Latency ms</td><td>42</td><td><canvas id="spark-table-2"></canvas></td></tr>
+        <tr><td>Error rate</td><td>0.3%</td><td><canvas id="spark-table-3"></canvas></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Editable data -->
+<div class="section">
+  <h2>Editable Data</h2>
+  <div class="card">
+    <div class="card-title">Paste CSV or enter comma-separated numbers</div>
+    <textarea id="data-input">12, 15, 11, 18, 22, 19, 25, 23, 28, 30, 27, 35</textarea>
+    <div style="margin-top:12px"><canvas id="spark-custom"></canvas></div>
+  </div>
+</div>
+
+<!-- Stock tickers -->
+<div class="section">
+  <h2>Stock Ticker Demo (live updating)</h2>
+  <div class="ticker-grid" id="ticker-grid"></div>
+</div>
+
+<!-- Performance benchmark -->
+<div class="section">
+  <h2>Performance Benchmark</h2>
+  <div class="card">
+    <button id="btn-bench">Run: 500 sparklines</button>
+    <div class="perf-result" id="perf-result"></div>
+    <canvas id="bench-canvas" style="display:none"></canvas>
+  </div>
+</div>
+
+<p class="info">
+  Resize the width slider -- labels reflow instantly using pure arithmetic (no DOM measurement).<br />
+  Built with <a href="https://github.com/chenglou/pretext">@chenglou/pretext</a>.
+  <a href="https://github.com/ShipItAndPray/pretext-sparkline">Source on GitHub</a>.
+</p>
+
+<script type="module">
+// ============================================================
+// Inline Pretext mock for demo (real apps use @chenglou/pretext)
+// ============================================================
+const _canvas = document.createElement("canvas");
+const _ctx = _canvas.getContext("2d");
+const _cache = new Map();
+
+const pretext = {
+  prepare(font, texts) {
+    _ctx.font = font;
+    for (const t of texts) {
+      const key = font + "|" + t;
+      if (!_cache.has(key)) {
+        _cache.set(key, _ctx.measureText(t).width);
+      }
+    }
+  },
+  layout(font, text) {
+    const key = font + "|" + text;
+    if (_cache.has(key)) return { width: _cache.get(key), height: 12 };
+    _ctx.font = font;
+    const w = _ctx.measureText(text).width;
+    _cache.set(key, w);
+    return { width: w, height: 12 };
+  },
+};
+
+// ============================================================
+// Inline library (for demo; production uses npm package)
+// ============================================================
+function formatValue(v) {
+  if (Math.abs(v) >= 1e6) return (v/1e6).toFixed(1)+"M";
+  if (Math.abs(v) >= 1e3) return (v/1e3).toFixed(1)+"K";
+  if (Number.isInteger(v)) return String(v);
+  return v.toFixed(1);
+}
+
+function valueToY(value, min, max, top, bottom) {
+  if (max === min) return (top+bottom)/2;
+  return bottom - ((value-min)/(max-min)) * (bottom-top);
+}
+
+function indexToX(index, count, left, right) {
+  if (count <= 1) return (left+right)/2;
+  return left + (index/(count-1)) * (right-left);
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+function placeLabel(text, px, py, lw, lh, dataIndex, color, canvasW, canvasH, occupied) {
+  const gap = 3;
+  const candidates = [
+    { placement:"above", x:px-lw/2, y:py-lh-gap },
+    { placement:"below", x:px-lw/2, y:py+gap },
+    { placement:"right", x:px+gap, y:py-lh/2 },
+    { placement:"left", x:px-lw-gap, y:py-lh/2 },
+  ];
+  for (const c of candidates) {
+    const x = Math.max(0, Math.min(c.x, canvasW-lw));
+    const y = Math.max(0, Math.min(c.y, canvasH-lh));
+    const rect = { x, y, w:lw, h:lh };
+    if (!occupied.some(r => rectsOverlap(rect, r))) {
+      return { text, x, y, width:lw, height:lh, placement:c.placement, dataIndex, color };
+    }
+  }
+  const x = Math.max(0, Math.min(px-lw/2, canvasW-lw));
+  const y = Math.max(0, py-lh-gap);
+  return { text, x, y, width:lw, height:lh, placement:"above", dataIndex, color };
+}
+
+function computeLayout(options, pt) {
+  const { data, width, height, lineColor="#4F8EF7", fillColor, padding=4, labels:labelConfig, annotations=[] } = options;
+  if (!data.length) return { points:[], fillPoints:null, labels:[], dataMin:0, dataMax:0, minIndex:0, maxIndex:0 };
+
+  let dataMin=data[0], dataMax=data[0], minIndex=0, maxIndex=0;
+  for (let i=1;i<data.length;i++){
+    if(data[i]<dataMin){dataMin=data[i];minIndex=i;}
+    if(data[i]>dataMax){dataMax=data[i];maxIndex=i;}
+  }
+
+  const showLabels = labelConfig?.show ?? "none";
+  const labelPad = 4;
+  const labelTexts=[], labelIndices=[], labelColors=[];
+
+  if (showLabels==="last") {
+    labelTexts.push(formatValue(data[data.length-1])); labelIndices.push(data.length-1); labelColors.push(lineColor);
+  } else if (showLabels==="minmax") {
+    labelTexts.push(formatValue(dataMin)); labelIndices.push(minIndex); labelColors.push("#EF4444");
+    if (maxIndex!==minIndex) { labelTexts.push(formatValue(dataMax)); labelIndices.push(maxIndex); labelColors.push("#34D399"); }
+  } else if (showLabels==="all") {
+    for (let i=0;i<data.length;i++){ labelTexts.push(formatValue(data[i])); labelIndices.push(i); labelColors.push(lineColor); }
+  }
+
+  for (const ann of annotations) {
+    if (ann.index>=0 && ann.index<data.length) {
+      labelTexts.push(ann.text); labelIndices.push(ann.index); labelColors.push("#F59E0B");
+    }
+  }
+
+  pt.prepare(labelTexts);
+  const measurements = labelTexts.map(t => pt.layout(t));
+
+  let rightMargin = padding;
+  if (showLabels==="last" && measurements.length>0) rightMargin = Math.max(rightMargin, measurements[0].width+labelPad*2);
+
+  const plotLeft=padding, plotRight=width-rightMargin, plotTop=padding+8, plotBottom=height-padding-8;
+  const points = [];
+  for (let i=0;i<data.length;i++) points.push({ x:indexToX(i,data.length,plotLeft,plotRight), y:valueToY(data[i],dataMin,dataMax,plotTop,plotBottom) });
+
+  let fillPoints = null;
+  if (fillColor) fillPoints = [...points, {x:points[points.length-1].x,y:plotBottom}, {x:points[0].x,y:plotBottom}];
+
+  const resolvedLabels=[], occupied=[];
+  for (let i=0;i<labelTexts.length;i++){
+    const {width:lw,height:lh} = measurements[i];
+    const p = points[labelIndices[i]];
+    const label = placeLabel(labelTexts[i],p.x,p.y,lw,lh,labelIndices[i],labelColors[i],width,height,occupied);
+    if(label){ resolvedLabels.push(label); occupied.push({x:label.x,y:label.y,w:label.width,h:label.height}); }
+  }
+
+  return { points, fillPoints, labels:resolvedLabels, dataMin, dataMax, minIndex, maxIndex };
+}
+
+function renderSparkline(ctx, layout, options) {
+  const { width, height, lineColor="#4F8EF7", fillColor, lineWidth=1.5, font="11px sans-serif" } = options;
+  ctx.clearRect(0,0,width,height);
+  if (!layout.points.length) return;
+
+  if (fillColor && layout.fillPoints) {
+    ctx.save(); ctx.fillStyle=fillColor; ctx.beginPath();
+    ctx.moveTo(layout.fillPoints[0].x, layout.fillPoints[0].y);
+    for (let i=1;i<layout.fillPoints.length;i++) ctx.lineTo(layout.fillPoints[i].x, layout.fillPoints[i].y);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  ctx.save(); ctx.strokeStyle=lineColor; ctx.lineWidth=lineWidth; ctx.lineJoin="round"; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(layout.points[0].x, layout.points[0].y);
+  for (let i=1;i<layout.points.length;i++) ctx.lineTo(layout.points[i].x, layout.points[i].y);
+  ctx.stroke(); ctx.restore();
+
+  if (layout.points.length>1) {
+    const minP=layout.points[layout.minIndex], maxP=layout.points[layout.maxIndex];
+    ctx.save(); ctx.fillStyle="#EF4444"; ctx.beginPath(); ctx.arc(minP.x,minP.y,2.5,0,Math.PI*2); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.fillStyle="#34D399"; ctx.beginPath(); ctx.arc(maxP.x,maxP.y,2.5,0,Math.PI*2); ctx.fill(); ctx.restore();
+  }
+
+  const lastP=layout.points[layout.points.length-1];
+  ctx.save(); ctx.fillStyle=lineColor; ctx.beginPath(); ctx.arc(lastP.x,lastP.y,2.5,0,Math.PI*2); ctx.fill(); ctx.restore();
+
+  if (layout.labels.length>0) {
+    ctx.save(); ctx.font=font; ctx.textBaseline="top";
+    for (const l of layout.labels) { ctx.fillStyle=l.color; ctx.fillText(l.text,l.x,l.y); }
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// Helper: create and render a sparkline on a canvas element
+// ============================================================
+const FONT = "11px Inter, -apple-system, sans-serif";
+
+function drawSparkline(canvasId, opts) {
+  const canvas = document.getElementById(canvasId);
+  const dpr = window.devicePixelRatio || 1;
+  const w = opts.width || 300;
+  const h = opts.height || 40;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  const ptHandle = {
+    prepare(texts) { pretext.prepare(FONT, texts); },
+    layout(text) { return pretext.layout(FONT, text); },
+  };
+
+  const fullOpts = { font:FONT, width:w, height:h, ...opts };
+  const layout = computeLayout(fullOpts, ptHandle);
+  renderSparkline(ctx, layout, fullOpts);
+  return { canvas, ctx, layout };
+}
+
+// ============================================================
+// Sample data
+// ============================================================
+const SAMPLE = [12,15,11,18,22,19,25,23,28,30,27,35,32,38,36,40,37,42,45,41];
+const CPU = [45,62,38,71,55,48,82,67,73,59,44,51,78,65,42,88,72,56,63,49];
+const MEM = [512,480,520,550,510,490,560,580,540,530,570,590,620,610,600,640,630,660,650,680];
+const DEPLOY = [2,3,1,5,4,2,8,3,2,6,4,1,7,5,3,4,2,6,3,5];
+
+let currentWidth = 300;
+
+function renderAll() {
+  drawSparkline("spark-basic", { data:SAMPLE, width:currentWidth, height:40, lineColor:"#4F8EF7" });
+  drawSparkline("spark-end", { data:SAMPLE, width:currentWidth, height:40, lineColor:"#4F8EF7", labels:{show:"last"} });
+  drawSparkline("spark-minmax", { data:CPU, width:currentWidth, height:50, lineColor:"#8B5CF6", labels:{show:"minmax"} });
+  drawSparkline("spark-fill", { data:MEM, width:currentWidth, height:50, lineColor:"#06B6D4", fillColor:"rgba(6,182,212,0.15)", labels:{show:"last"} });
+  drawSparkline("spark-annotations", { data:DEPLOY, width:currentWidth, height:55, lineColor:"#F59E0B", annotations:[{index:6,text:"deploy"},{index:12,text:"hotfix"}], labels:{show:"minmax"} });
+
+  // Table sparklines
+  drawSparkline("spark-table-1", { data:[10.2,11.5,10.8,12.1,12.4,11.9,12.4], width:120, height:24, lineColor:"#34D399" });
+  drawSparkline("spark-table-2", { data:[38,45,42,51,48,44,42], width:120, height:24, lineColor:"#F59E0B" });
+  drawSparkline("spark-table-3", { data:[0.5,0.3,0.4,0.6,0.2,0.3,0.3], width:120, height:24, lineColor:"#EF4444" });
+}
+
+renderAll();
+
+// ============================================================
+// Width slider
+// ============================================================
+const slider = document.getElementById("width-slider");
+const widthVal = document.getElementById("width-val");
+slider.addEventListener("input", () => {
+  currentWidth = parseInt(slider.value);
+  widthVal.textContent = currentWidth + "px";
+  renderAll();
+  renderCustom();
+});
+
+// ============================================================
+// Editable data
+// ============================================================
+const dataInput = document.getElementById("data-input");
+function renderCustom() {
+  const raw = dataInput.value.trim();
+  const nums = raw.split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+  if (nums.length > 0) {
+    drawSparkline("spark-custom", { data:nums, width:currentWidth, height:50, lineColor:"#EC4899", fillColor:"rgba(236,72,153,0.12)", labels:{show:"minmax"} });
+  }
+}
+dataInput.addEventListener("input", renderCustom);
+renderCustom();
+
+// ============================================================
+// Randomize / Reset
+// ============================================================
+function randomData(len, min, max) { return Array.from({length:len}, ()=> min+Math.random()*(max-min)); }
+
+document.getElementById("btn-randomize").addEventListener("click", () => {
+  SAMPLE.splice(0, SAMPLE.length, ...randomData(20, 5, 50).map(Math.round));
+  CPU.splice(0, CPU.length, ...randomData(20, 20, 95).map(Math.round));
+  MEM.splice(0, MEM.length, ...randomData(20, 400, 700).map(Math.round));
+  DEPLOY.splice(0, DEPLOY.length, ...randomData(20, 1, 10).map(Math.round));
+  renderAll();
+});
+
+document.getElementById("btn-reset").addEventListener("click", () => {
+  SAMPLE.splice(0, SAMPLE.length, 12,15,11,18,22,19,25,23,28,30,27,35,32,38,36,40,37,42,45,41);
+  CPU.splice(0, CPU.length, 45,62,38,71,55,48,82,67,73,59,44,51,78,65,42,88,72,56,63,49);
+  MEM.splice(0, MEM.length, 512,480,520,550,510,490,560,580,540,530,570,590,620,610,600,640,630,660,650,680);
+  DEPLOY.splice(0, DEPLOY.length, 2,3,1,5,4,2,8,3,2,6,4,1,7,5,3,4,2,6,3,5);
+  renderAll();
+});
+
+// ============================================================
+// Stock ticker demo
+// ============================================================
+const TICKERS = [
+  { symbol:"AAPL", price:189.50, color:"#34D399" },
+  { symbol:"GOOGL", price:176.20, color:"#4F8EF7" },
+  { symbol:"MSFT", price:425.80, color:"#8B5CF6" },
+  { symbol:"AMZN", price:186.40, color:"#F59E0B" },
+  { symbol:"TSLA", price:175.30, color:"#EF4444" },
+  { symbol:"NVDA", price:878.40, color:"#06B6D4" },
+  { symbol:"META", price:502.60, color:"#EC4899" },
+  { symbol:"NFLX", price:628.90, color:"#F97316" },
+];
+
+const tickerData = TICKERS.map(t => ({
+  ...t,
+  history: Array.from({length:30}, (_,i) => t.price * (0.95 + Math.random()*0.10)),
+}));
+
+const grid = document.getElementById("ticker-grid");
+for (let i=0; i<tickerData.length; i++) {
+  const t = tickerData[i];
+  const last = t.history[t.history.length-1];
+  const prev = t.history[t.history.length-2];
+  const change = ((last-prev)/prev*100).toFixed(2);
+  const up = last >= prev;
+
+  const card = document.createElement("div");
+  card.className = "ticker-card";
+  card.innerHTML = `
+    <div class="ticker-header">
+      <span class="ticker-symbol" style="color:${t.color}">${t.symbol}</span>
+      <span class="ticker-price ${up?'up':'down'}">$${last.toFixed(2)}</span>
+    </div>
+    <div class="ticker-change" style="color:${up?'#34D399':'#EF4444'}">${up?'+':''}${change}%</div>
+    <canvas id="ticker-${i}" style="margin-top:8px"></canvas>
+  `;
+  grid.appendChild(card);
+}
+
+function renderTickers() {
+  for (let i=0; i<tickerData.length; i++) {
+    const t = tickerData[i];
+    drawSparkline(`ticker-${i}`, {
+      data:t.history,
+      width:196,
+      height:36,
+      lineColor:t.color,
+      fillColor: t.color + "1A",
+      labels:{show:"last"},
+    });
+  }
+}
+renderTickers();
+
+// Live update tickers
+setInterval(() => {
+  for (const t of tickerData) {
+    const last = t.history[t.history.length-1];
+    const delta = last * (Math.random()*0.02 - 0.01);
+    t.history.push(last + delta);
+    if (t.history.length > 60) t.history.shift();
+  }
+
+  // Update prices in DOM
+  const cards = grid.querySelectorAll(".ticker-card");
+  for (let i=0; i<tickerData.length; i++) {
+    const t = tickerData[i];
+    const last = t.history[t.history.length-1];
+    const prev = t.history[t.history.length-2];
+    const up = last >= prev;
+    const change = ((last-prev)/prev*100).toFixed(2);
+    cards[i].querySelector(".ticker-price").textContent = "$"+last.toFixed(2);
+    cards[i].querySelector(".ticker-price").className = "ticker-price "+(up?"up":"down");
+    cards[i].querySelector(".ticker-change").textContent = (up?"+":"")+change+"%";
+    cards[i].querySelector(".ticker-change").style.color = up?"#34D399":"#EF4444";
+  }
+  renderTickers();
+}, 2000);
+
+// ============================================================
+// Performance benchmark
+// ============================================================
+document.getElementById("btn-bench").addEventListener("click", () => {
+  const canvas = document.getElementById("bench-canvas");
+  canvas.width = 200; canvas.height = 40;
+  const ctx = canvas.getContext("2d");
+  const dpr = 1;
+  const ptHandle = { prepare(t){pretext.prepare(FONT,t);}, layout(t){return pretext.layout(FONT,t);} };
+  const benchData = Array.from({length:50}, ()=>Math.random()*100);
+
+  const t0 = performance.now();
+  for (let i=0; i<500; i++) {
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    const layout = computeLayout({ data:benchData, width:200, height:40, lineColor:"#4F8EF7", labels:{show:"last"} }, ptHandle);
+    renderSparkline(ctx, layout, { data:benchData, width:200, height:40, lineColor:"#4F8EF7", font:FONT, labels:{show:"last"} });
+  }
+  const elapsed = (performance.now()-t0).toFixed(1);
+  document.getElementById("perf-result").textContent = `Performance: 500 sparklines in ${elapsed}ms`;
+});
+</script>
+</body>
+</html>
